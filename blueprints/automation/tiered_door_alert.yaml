@@ -1,0 +1,945 @@
+blueprint:
+  name: 🚪 Advanced Tiered Door Alert System
+  description: >-
+    # 🚪 ADVANCED TIERED DOOR ALERT SYSTEM
+
+    **Version:** 1.3.012
+
+    **Category:** Alert & Monitoring
+
+    ---
+
+    ## 📖 DESCRIPTION
+
+    A comprehensive three-stage escalating alert system for monitoring doors that shouldn't be left open. Perfect for refrigerators, freezers, exterior doors, garage doors, and any other critical entry points.
+
+    **Key Features:**
+
+    - 🔊 **Three-tier escalating alerts** with customizable timing
+
+    - 🎵 **Chime TTS integration** with configurable chimes per stage
+
+    - 💡 **Smart light flashing** with RGB color support and brightness control
+
+    - 📱 **Mobile notifications** with configurable start stage
+
+    - 🛡️ **Override sensor** support for conditional monitoring
+
+    - 📋 **Preset configurations** for common door types
+
+    - 🔧 **Comprehensive customization** options
+
+    ---
+
+    ## 🎯 ALERT STAGES
+
+    **Stage 1: First Local Alert**
+    - **Trigger:** After initial timeout
+    - **Actions:** Local speaker announcement (no chime by default)
+    - **Mobile:** Optional (if configured)
+
+    **Stage 2: Second Local Alert**  
+    - **Trigger:** After second timeout
+    - **Actions:** Local speaker with chime + light flashing begins
+    - **Mobile:** Optional (if configured)
+
+    **Stage 3: Critical House-wide Alert**
+    - **Trigger:** After critical timeout
+    - **Actions:** All speakers with chime + continued light flashing + repeating announcements
+    - **Mobile:** Always included (with timing information)
+
+    ---
+
+    ## 💡 PRO TIPS
+
+    - **Test your timing:** Start with shorter delays while testing, then increase
+    - **Speaker groups:** Create a "house_wide" media player group for critical alerts
+    - **Light selection:** Use a prominent light that's easily noticed
+    - **Override sensor:** Great for sliding doors with screens, or maintenance modes
+    - **Mobile notifications:** Consider starting at Stage 2 to avoid notification spam
+
+    ---
+
+    ## 🔗 DEPENDENCIES
+
+    - **Chime TTS** - For enhanced audio announcements
+    - **Mobile App** - For push notifications (optional)
+    - **RGB Light** - For color flashing (optional, works with any light)
+
+    ---
+
+    ## 📞 SUPPORT & FEEDBACK
+
+    This blueprint is designed to be comprehensive yet easy to use. All timing, messages, and behaviors are fully customizable while providing sensible defaults for common scenarios.
+
+    **Found this helpful?** Please consider sharing your configuration and feedback!
+
+  domain: automation
+  source_url: https://raw.githubusercontent.com/splitsec2/ha-blueprints/main/blueprints/automation/tiered_door_alert.yaml
+  homeassistant:
+    min_version: 2024.1.0
+
+  input:
+    # === BASIC CONFIGURATION ===
+    door_sensor:
+      name: 🚪 Door Sensor
+      description: Binary sensor that detects when door is open (reports 'on' when open)
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+
+    door_name:
+      name: 🏷️ Door Name
+      description: Human-readable name for the door (used in announcements)
+      default: "Door"
+      selector:
+        text:
+
+    # === AUDIO CONFIGURATION ===
+    local_speaker:
+      name: 🔊 Local Speaker
+      description: >-
+        Media player(s) for Stage 1 and Stage 2 alerts (near the door).
+        Priority-ordered — if the first doesn't confirm playback within
+        5s, the next is tried.
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+
+    all_speakers:
+      name: 📢 House-wide Speakers
+      description: >-
+        Media player(s) for Stage 3 critical alerts. Priority-ordered —
+        tried one at a time until one confirms playback, not simultaneous.
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+
+    # === TIMING CONFIGURATION ===
+    first_alert_delay:
+      name: ⏱️ First Alert Delay
+      description: Time before first local alert (minimum 10 seconds)
+      default: 90
+      selector:
+        number:
+          min: 5
+          max: 1800
+          step: 5
+          unit_of_measurement: seconds
+          mode: slider
+
+    second_alert_delay:
+      name: ⏱️ Second Alert Delay
+      description: Total time before second local alert (must be > first alert + 30s)
+      default: 180
+      selector:
+        number:
+          min: 10
+          max: 2400
+          step: 5
+          unit_of_measurement: seconds
+          mode: slider
+
+    critical_alert_delay:
+      name: ⚠️ Critical Alert Delay
+      description: Total time before critical house-wide alerts (must be > second alert + 60s)
+      default: 300
+      selector:
+        number:
+          min: 15
+          max: 3600
+          step: 5
+          unit_of_measurement: seconds
+          mode: slider
+
+    critical_repeat_interval:
+      name: 🔄 Critical Repeat Interval
+      description: How often to repeat critical alerts (minimum 15 seconds)
+      default: 45
+      selector:
+        number:
+          min: 15
+          max: 600
+          step: 5
+          unit_of_measurement: seconds
+          mode: slider
+
+    # === VOLUME CONFIGURATION ===
+    local_alert_volume:
+      name: 🔉 Local Alert Volume
+      description: Volume for Stage 1 and Stage 2 alerts (0.0 to 1.0)
+      default: 0.5
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+
+    critical_alert_volume:
+      name: 🔊 Critical Alert Volume
+      description: Volume for Stage 3 house-wide alerts (0.0 to 1.0)
+      default: 0.8
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.1
+          mode: slider
+
+    # === CHIME CONFIGURATION ===
+    tts_platform:
+      name: 🗣️ TTS Platform
+      description: Text-to-speech platform to use with Chime TTS
+      default: google_translate
+      selector:
+        select:
+          options:
+            - label: "Amazon Polly"
+              value: amazon_polly
+            - label: "Baidu"
+              value: baidu
+            - label: "ElevenLabs TTS"
+              value: tts.elevenlabs_text_to_speech
+            - label: "Google Cloud"
+              value: google_cloud
+            - label: "Google Translate"
+              value: google_translate
+            - label: "IBM Watson TTS"
+              value: watson_tts
+            - label: "MaryTTS"
+              value: marytts
+            - label: "Microsoft Edge TTS"
+              value: edge_tts
+            - label: "Microsoft Text-To-Speech"
+              value: microsoft
+            - label: "Nabu Casa Cloud TTS"
+              value: cloud
+            - label: "OpenAI TTS"
+              value: openai_tts
+            - label: "Pico TTS"
+              value: picotts
+            - label: "Piper"
+              value: tts.piper
+            - label: "VoiceRSS"
+              value: voicerss
+            - label: "Yandex TTS"
+              value: yandextts
+
+    stage1_chime:
+      name: 🎵 Stage 1 Chime
+      description: Chime sound for first alert (none recommended)
+      default: none
+      selector:
+        select:
+          options:
+            - label: "🔇 No Chime"
+              value: none
+            - label: "🔔 Bells"
+              value: bells
+            - label: "🔔 Bells 2"
+              value: bells_2
+            - label: "🎵 Ba Dum Tss"
+              value: ba_dum_tss
+            - label: "💡 Bright"
+              value: bright
+            - label: "🎵 Chirp"
+              value: chirp
+            - label: "🎵 Choir"
+              value: choir
+            - label: "🎵 Chord"
+              value: chord
+            - label: "🎵 Classical"
+              value: classical
+            - label: "🦗 Crickets"
+              value: crickets
+            - label: "🔔 Ding Dong"
+              value: ding_dong
+            - label: "🥁 Drumroll"
+              value: drumroll
+            - label: "🎵 Dun Dun Dun"
+              value: dun_dun_dun
+            - label: "❌ Error"
+              value: error
+            - label: "🎺 Fanfare"
+              value: fanfare
+            - label: "🎵 Glockenspiel"
+              value: glockenspiel
+            - label: "👋 Hail"
+              value: hail
+            - label: "🚪 Knock"
+              value: knock
+            - label: "🎵 Marimba"
+              value: marimba
+            - label: "🪙 Mario Coin"
+              value: mario_coin
+            - label: "🎤 Microphone Tap"
+              value: microphone_tap
+            - label: "😢 Sad Trombone"
+              value: sad_trombone
+            - label: "🍞 Soft"
+              value: soft
+            - label: "🎵 Ta-da"
+              value: tada
+            - label: "🍞 Toast"
+              value: toast
+            - label: "🎵 Twenty Four"
+              value: twenty_four
+            - label: "🎺 Whistle"
+              value: whistle
+
+    stage2_chime:
+      name: 🎵 Stage 2 Chime
+      description: Chime sound for second alert
+      default: whistle
+      selector:
+        select:
+          options:
+            - label: "🔇 No Chime"
+              value: none
+            - label: "🔔 Bells"
+              value: bells
+            - label: "🔔 Bells 2"
+              value: bells_2
+            - label: "🎵 Ba Dum Tss"
+              value: ba_dum_tss
+            - label: "💡 Bright"
+              value: bright
+            - label: "🎵 Chirp"
+              value: chirp
+            - label: "🎵 Choir"
+              value: choir
+            - label: "🎵 Chord"
+              value: chord
+            - label: "🎵 Classical"
+              value: classical
+            - label: "🦗 Crickets"
+              value: crickets
+            - label: "🔔 Ding Dong"
+              value: ding_dong
+            - label: "🥁 Drumroll"
+              value: drumroll
+            - label: "🎵 Dun Dun Dun"
+              value: dun_dun_dun
+            - label: "❌ Error"
+              value: error
+            - label: "🎺 Fanfare"
+              value: fanfare
+            - label: "🎵 Glockenspiel"
+              value: glockenspiel
+            - label: "👋 Hail"
+              value: hail
+            - label: "🚪 Knock"
+              value: knock
+            - label: "🎵 Marimba"
+              value: marimba
+            - label: "🪙 Mario Coin"
+              value: mario_coin
+            - label: "🎤 Microphone Tap"
+              value: microphone_tap
+            - label: "😢 Sad Trombone"
+              value: sad_trombone
+            - label: "🍞 Soft"
+              value: soft
+            - label: "🎵 Ta-da"
+              value: tada
+            - label: "🍞 Toast"
+              value: toast
+            - label: "🎵 Twenty Four"
+              value: twenty_four
+            - label: "🎺 Whistle"
+              value: whistle
+
+    stage3_chime:
+      name: 🎵 Stage 3 Chime
+      description: Chime sound for critical alerts
+      default: error
+      selector:
+        select:
+          options:
+            - label: "🔇 No Chime"
+              value: none
+            - label: "🔔 Bells"
+              value: bells
+            - label: "🔔 Bells 2"
+              value: bells_2
+            - label: "🎵 Ba Dum Tss"
+              value: ba_dum_tss
+            - label: "💡 Bright"
+              value: bright
+            - label: "🎵 Chirp"
+              value: chirp
+            - label: "🎵 Choir"
+              value: choir
+            - label: "🎵 Chord"
+              value: chord
+            - label: "🎵 Classical"
+              value: classical
+            - label: "🦗 Crickets"
+              value: crickets
+            - label: "🔔 Ding Dong"
+              value: ding_dong
+            - label: "🥁 Drumroll"
+              value: drumroll
+            - label: "🎵 Dun Dun Dun"
+              value: dun_dun_dun
+            - label: "❌ Error"
+              value: error
+            - label: "🎺 Fanfare"
+              value: fanfare
+            - label: "🎵 Glockenspiel"
+              value: glockenspiel
+            - label: "👋 Hail"
+              value: hail
+            - label: "🚪 Knock"
+              value: knock
+            - label: "🎵 Marimba"
+              value: marimba
+            - label: "🪙 Mario Coin"
+              value: mario_coin
+            - label: "🎤 Microphone Tap"
+              value: microphone_tap
+            - label: "😢 Sad Trombone"
+              value: sad_trombone
+            - label: "🍞 Soft"
+              value: soft
+            - label: "🎵 Ta-da"
+              value: tada
+            - label: "🍞 Toast"
+              value: toast
+            - label: "🎵 Twenty Four"
+              value: twenty_four
+            - label: "🎺 Whistle"
+              value: whistle
+
+    # === LIGHT FLASHING CONFIGURATION ===
+    enable_light_flash:
+      name: 💡 Enable Light Flashing
+      description: Flash a light during Stage 2 and Stage 3 alerts
+      default: false
+      selector:
+        boolean:
+
+    flash_light:
+      name: 💡 Flash Light
+      description: Light or light group to flash (only used if light flashing enabled)
+      default: {}
+      selector:
+        entity:
+          filter:
+            - domain: light
+
+    flash_start_stage:
+      name: 🚀 Flash Start Stage
+      description: Which stage should light flashing begin?
+      default: stage2
+      selector:
+        select:
+          options:
+            - label: "Stage 1 (Immediate)"
+              value: stage1
+            - label: "Stage 2 (Recommended)"
+              value: stage2
+            - label: "Stage 3 (Critical Only)"
+              value: stage3
+            - label: "Stage 3 Continuous (Critical + Repeating)"
+              value: stage3_continuous
+
+    flash_count:
+      name: 🔢 Number of Flashes
+      description: How many times should the light flash per sequence
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+          mode: slider
+
+    flash_duration:
+      name: ⏱️ Flash Sequence Duration
+      description: Total time for complete flash sequence (minimum 1 second)
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 0.5
+          unit_of_measurement: seconds
+          mode: slider
+
+    flash_dim_level:
+      name: 🔅 Flash Dim Level
+      description: Brightness level for dim phase of flash (0-100%)
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+
+    flash_bright_level:
+      name: 🔆 Flash Bright Level
+      description: Brightness level for bright phase of flash (must be 30% higher than dim level)
+      default: 90
+      selector:
+        number:
+          min: 30
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+
+    flash_color:
+      name: 🎨 Flash Color
+      description: Color to use for flashing (RGB lights only)
+      default: [255, 0, 0]
+      selector:
+        color_rgb:
+
+variables:
+  # Input variables
+  door_sensor_entity: !input door_sensor
+  door_name_var: !input door_name
+  local_speaker_entity: !input local_speaker
+  all_speakers_entity: !input all_speakers
+
+  # Simplified timing - just use the inputs directly
+  first_delay: !input first_alert_delay
+  second_delay: !input second_alert_delay
+  critical_delay: !input critical_alert_delay
+  repeat_interval: !input critical_repeat_interval
+
+  # Message variables - with dynamic minute calculation
+  stage1_message: "{{ door_name_var }} is open"
+  stage2_message: "{{ door_name_var }} is still open"
+
+  # Other variables
+  local_volume: !input local_alert_volume
+  critical_volume: !input critical_alert_volume
+  tts_platform_var: !input tts_platform
+  stage1_chime_var: !input stage1_chime
+  stage2_chime_var: !input stage2_chime
+  stage3_chime_var: !input stage3_chime
+  enable_light_flash_var: !input enable_light_flash
+  flash_light_entity: !input flash_light
+  flash_start_stage_var: !input flash_start_stage
+  flash_count_var: !input flash_count
+  flash_duration_var: !input flash_duration
+  flash_dim_var: !input flash_dim_level
+  flash_bright_var: !input flash_bright_level
+  flash_color_var: !input flash_color
+
+trigger:
+  - platform: state
+    entity_id: !input door_sensor
+    to: "on"
+    for:
+      seconds: !input first_alert_delay
+    id: "first_alert"
+
+  - platform: state
+    entity_id: !input door_sensor
+    to: "on"
+    for:
+      seconds: !input second_alert_delay
+    id: "second_alert"
+
+  - platform: state
+    entity_id: !input door_sensor
+    to: "on"
+    for:
+      seconds: !input critical_alert_delay
+    id: "critical_alert"
+
+condition:
+  - condition: state
+    entity_id: !input door_sensor
+    state: "on"
+
+action:
+  - choose:
+      # === STAGE 1: FIRST ALERT ===
+      - conditions:
+          - condition: trigger
+            id: "first_alert"
+        sequence:
+          - choose:
+              # Light flashing enabled for stage 1
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_light_flash_var }}"
+                  - condition: template
+                    value_template: "{{ flash_start_stage_var == 'stage1' }}"
+                sequence:
+                  # Store original light state
+                  - variables:
+                      original_brightness: "{{ state_attr(flash_light_entity, 'brightness') | default(255) }}"
+                      original_rgb_color: "{{ state_attr(flash_light_entity, 'rgb_color') }}"
+                      original_color_temp: "{{ state_attr(flash_light_entity, 'color_temp') }}"
+                      original_light_state: "{{ states(flash_light_entity) }}"
+
+                  - action: script.announce_with_fallback
+                    data:
+                      message: "{{ stage1_message }}"
+                      speakers: "{{ local_speaker_entity }}"
+                      tts_platform: "{{ tts_platform_var }}"
+                      cache: true
+                      volume_level: "{{ local_volume }}"
+                      chime_path: "{{ stage1_chime_var if stage1_chime_var != 'none' else '' }}"
+
+                  - repeat:
+                      count: "{{ flash_count_var }}"
+                      sequence:
+                        - service: light.turn_on
+                          target:
+                            entity_id: "{{ flash_light_entity }}"
+                          data:
+                            brightness_pct: "{{ flash_dim_var }}"
+                            rgb_color: "{{ flash_color_var }}"
+                        - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+                        - service: light.turn_on
+                          target:
+                            entity_id: "{{ flash_light_entity }}"
+                          data:
+                            brightness_pct: "{{ flash_bright_var }}"
+                            rgb_color: "{{ flash_color_var }}"
+                        - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+
+                  # Restore original light state
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'off' }}"
+                        sequence:
+                          - service: light.turn_off
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'on' }}"
+                        sequence:
+                          - service: light.turn_on
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                            data:
+                              brightness: "{{ original_brightness }}"
+                              rgb_color: "{{ original_rgb_color if original_rgb_color else omit }}"
+                              color_temp: "{{ original_color_temp if original_color_temp else omit }}"
+            default:
+              # No flashing - just announcement
+              - action: script.announce_with_fallback
+                data:
+                  message: "{{ stage1_message }}"
+                  speakers: "{{ local_speaker_entity }}"
+                  tts_platform: "{{ tts_platform_var }}"
+                  cache: true
+                  volume_level: "{{ local_volume }}"
+                  chime_path: "{{ stage1_chime_var if stage1_chime_var != 'none' else '' }}"
+
+      # === STAGE 2: SECOND ALERT ===
+      - conditions:
+          - condition: trigger
+            id: "second_alert"
+        sequence:
+          - choose:
+              # Light flashing enabled for stage 2 (or continuing from stage 1)
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_light_flash_var }}"
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ flash_start_stage_var == 'stage1' }}"
+                      - condition: template
+                        value_template: "{{ flash_start_stage_var == 'stage2' }}"
+                sequence:
+                  # Store original light state
+                  - variables:
+                      original_brightness: "{{ state_attr(flash_light_entity, 'brightness') | default(255) }}"
+                      original_rgb_color: "{{ state_attr(flash_light_entity, 'rgb_color') }}"
+                      original_color_temp: "{{ state_attr(flash_light_entity, 'color_temp') }}"
+                      original_light_state: "{{ states(flash_light_entity) }}"
+
+                  - action: script.announce_with_fallback
+                    data:
+                      message: "{{ stage2_message }}"
+                      speakers: "{{ local_speaker_entity }}"
+                      tts_platform: "{{ tts_platform_var }}"
+                      cache: true
+                      volume_level: "{{ local_volume }}"
+                      chime_path: "{{ stage2_chime_var if stage2_chime_var != 'none' else '' }}"
+
+                  - repeat:
+                      count: "{{ flash_count_var }}"
+                      sequence:
+                        - service: light.turn_on
+                          target:
+                            entity_id: "{{ flash_light_entity }}"
+                          data:
+                            brightness_pct: "{{ flash_dim_var }}"
+                            rgb_color: "{{ flash_color_var }}"
+                        - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+                        - service: light.turn_on
+                          target:
+                            entity_id: "{{ flash_light_entity }}"
+                          data:
+                            brightness_pct: "{{ flash_bright_var }}"
+                            rgb_color: "{{ flash_color_var }}"
+                        - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+
+                  # Restore original light state
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'off' }}"
+                        sequence:
+                          - service: light.turn_off
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'on' }}"
+                        sequence:
+                          - service: light.turn_on
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                            data:
+                              brightness: "{{ original_brightness }}"
+                              rgb_color: "{{ original_rgb_color if original_rgb_color else omit }}"
+                              color_temp: "{{ original_color_temp if original_color_temp else omit }}"
+            default:
+              # No flashing - just announcement
+              - action: script.announce_with_fallback
+                data:
+                  message: "{{ stage2_message }}"
+                  speakers: "{{ local_speaker_entity }}"
+                  tts_platform: "{{ tts_platform_var }}"
+                  cache: true
+                  volume_level: "{{ local_volume }}"
+                  chime_path: "{{ stage2_chime_var if stage2_chime_var != 'none' else '' }}"
+
+      # === STAGE 3: CRITICAL REPEATING ALERT ===
+      - conditions:
+          - condition: trigger
+            id: "critical_alert"
+        sequence:
+          # Store original light state for Stage 3
+          - variables:
+              original_brightness: "{{ state_attr(flash_light_entity, 'brightness') | default(255) }}"
+              original_rgb_color: "{{ state_attr(flash_light_entity, 'rgb_color') }}"
+              original_color_temp: "{{ state_attr(flash_light_entity, 'color_temp') }}"
+              original_light_state: "{{ states(flash_light_entity) }}"
+
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: !input door_sensor
+                  state: "on"
+              sequence:
+                - choose:
+                    # Light flashing enabled for stage 3 - should flash if start stage is 1, 2, or 3 (but NOT continuous)
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ enable_light_flash_var }}"
+                        - condition: template
+                          value_template: "{{ flash_start_stage_var in ['stage1', 'stage2', 'stage3'] }}"
+                      sequence:
+                        - variables:
+                            message: >
+                              {% set minutes = ((now() - states[door_sensor_entity].last_changed).total_seconds() / 60) | round(0) | int %}
+                              CRITICAL: {{ door_name_var }} has been open for {{ minutes }} {{ 'minute' if minutes == 1 else 'minutes' }}
+                        - action: script.announce_with_fallback
+                          data:
+                            message: "{{ message }}"
+                            speakers: "{{ all_speakers_entity }}"
+                            tts_platform: "{{ tts_platform_var }}"
+                            cache: true
+                            volume_level: "{{ critical_volume }}"
+                            chime_path: "{{ stage3_chime_var if stage3_chime_var != 'none' else '' }}"
+                        - repeat:
+                            count: "{{ flash_count_var }}"
+                            sequence:
+                              - service: light.turn_on
+                                target:
+                                  entity_id: "{{ flash_light_entity }}"
+                                data:
+                                  brightness_pct: "{{ flash_dim_var }}"
+                                  rgb_color: "{{ flash_color_var }}"
+                              - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+                              - service: light.turn_on
+                                target:
+                                  entity_id: "{{ flash_light_entity }}"
+                                data:
+                                  brightness_pct: "{{ flash_bright_var }}"
+                                  rgb_color: "{{ flash_color_var }}"
+                              - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+                        # Restore light state after each flash sequence (for non-continuous)
+                        - choose:
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ original_light_state == 'off' }}"
+                              sequence:
+                                - service: light.turn_off
+                                  target:
+                                    entity_id: "{{ flash_light_entity }}"
+                            - conditions:
+                                - condition: template
+                                  value_template: "{{ original_light_state == 'on' }}"
+                              sequence:
+                                - service: light.turn_on
+                                  target:
+                                    entity_id: "{{ flash_light_entity }}"
+                                  data:
+                                    brightness: "{{ original_brightness }}"
+                                    rgb_color: "{{ original_rgb_color if original_rgb_color else omit }}"
+                                    color_temp: "{{ original_color_temp if original_color_temp else omit }}"
+                    # Stage 3 CONTINUOUS: Constant flashing with occasional announcements
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ enable_light_flash_var }}"
+                        - condition: template
+                          value_template: "{{ flash_start_stage_var == 'stage3_continuous' }}"
+                      sequence:
+                        # Make announcement first
+                        - variables:
+                            message: >
+                              {% set minutes = ((now() - states[door_sensor_entity].last_changed).total_seconds() / 60) | round(0) | int %}
+                              CRITICAL: {{ door_name_var }} has been open for {{ minutes }} {{ 'minute' if minutes == 1 else 'minutes' }}
+                        - action: script.announce_with_fallback
+                          data:
+                            message: "{{ message }}"
+                            speakers: "{{ all_speakers_entity }}"
+                            tts_platform: "{{ tts_platform_var }}"
+                            cache: true
+                            volume_level: "{{ critical_volume }}"
+                            chime_path: "{{ stage3_chime_var if stage3_chime_var != 'none' else '' }}"
+                        # Then flash continuously until next announcement - simplified approach
+                        - repeat:
+                            count: "{{ (repeat_interval / (flash_duration_var + 1)) | round(0, 'floor') | int }}"
+                            sequence:
+                              # Flash sequence
+                              - repeat:
+                                  count: "{{ flash_count_var }}"
+                                  sequence:
+                                    - service: light.turn_on
+                                      target:
+                                        entity_id: "{{ flash_light_entity }}"
+                                      data:
+                                        brightness_pct: "{{ flash_dim_var }}"
+                                        rgb_color: "{{ flash_color_var }}"
+                                    - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+                                    - service: light.turn_on
+                                      target:
+                                        entity_id: "{{ flash_light_entity }}"
+                                      data:
+                                        brightness_pct: "{{ flash_bright_var }}"
+                                        rgb_color: "{{ flash_color_var }}"
+                                    - delay: "{{ (flash_duration_var / (flash_count_var * 2)) | round(1) }}"
+
+                              # Return to original state during pause
+                              - choose:
+                                  - conditions:
+                                      - condition: template
+                                        value_template: "{{ original_light_state == 'off' }}"
+                                    sequence:
+                                      - service: light.turn_off
+                                        target:
+                                          entity_id: "{{ flash_light_entity }}"
+                                default:
+                                  - service: light.turn_on
+                                    target:
+                                      entity_id: "{{ flash_light_entity }}"
+                                    data:
+                                      brightness: "{{ original_brightness }}"
+                                      rgb_color: "{{ original_rgb_color if original_rgb_color else omit }}"
+                                      color_temp: "{{ original_color_temp if original_color_temp else omit }}"
+
+                              # Pause (except on last iteration)
+                              - condition: template
+                                value_template: "{{ repeat.index < repeat.max }}"
+                              - delay: 1
+                  default:
+                    # No flashing - just announcement
+                    - variables:
+                        message: >
+                          {% set minutes = ((now() - states[door_sensor_entity].last_changed).total_seconds() / 60) | round(0) | int %}
+                          CRITICAL: {{ door_name_var }} has been open for {{ minutes }} {{ 'minute' if minutes == 1 else 'minutes' }}
+                    - action: script.announce_with_fallback
+                      data:
+                        message: "{{ message }}"
+                        speakers: "{{ all_speakers_entity }}"
+                        tts_platform: "{{ tts_platform_var }}"
+                        cache: true
+                        volume_level: "{{ critical_volume }}"
+                        chime_path: "{{ stage3_chime_var if stage3_chime_var != 'none' else '' }}"
+
+                - condition: state
+                  entity_id: !input door_sensor
+                  state: "on"
+
+                - delay: "{{ repeat_interval }}"
+
+          # Restore original light state when Stage 3 ends (only if NOT continuous)
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_light_flash_var }}"
+                  - condition: template
+                    value_template: "{{ flash_start_stage_var != 'stage3_continuous' }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'off' }}"
+                        sequence:
+                          - service: light.turn_off
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'on' }}"
+                        sequence:
+                          - service: light.turn_on
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                            data:
+                              brightness: "{{ original_brightness }}"
+                              rgb_color: "{{ original_rgb_color if original_rgb_color else omit }}"
+                              color_temp: "{{ original_color_temp if original_color_temp else omit }}"
+
+          # Restore original light state for continuous flashing (always restore at end)
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_light_flash_var }}"
+                  - condition: template
+                    value_template: "{{ flash_start_stage_var == 'stage3_continuous' }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'off' }}"
+                        sequence:
+                          - service: light.turn_off
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ original_light_state == 'on' }}"
+                        sequence:
+                          - service: light.turn_on
+                            target:
+                              entity_id: "{{ flash_light_entity }}"
+                            data:
+                              brightness: "{{ original_brightness }}"
+                              rgb_color: "{{ original_rgb_color if original_rgb_color else omit }}"
+                              color_temp: "{{ original_color_temp if original_color_temp else omit }}"
+
+mode: restart
+max_exceeded: silent

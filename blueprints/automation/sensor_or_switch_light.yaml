@@ -1,0 +1,356 @@
+# =============================================================================
+# Sensor-or-Switch Light — one engine, one felt behaviour.
+#
+# MODEL: every "turn-on event" is the same thing, whatever its source —
+#   START (any of: motion/presence-on  •  a momentary trigger like a DOOR opening
+#          •  the light/switch turned on by hand) → the arc begins.
+#   ON    day/night level. (lux/sun GATE the *auto-on* triggers — motion/door; a
+#          manual switch-on overrides the gate: flipping the switch is intent.)
+#   HOLD  while any HOLD sensor (motion/presence) is on. Momentary triggers (doors)
+#          do NOT hold — a propped-open door won't keep the light on. No hold sensor
+#          on → the timer is the only hold. Any new START event resets the arc.
+#   DIM   RELATIVE: drop each light to dim_pct % of its CURRENT brightness (skipped
+#          automatically for on/off lights that have no brightness).
+#   OFF   after the off delay. Dim + off delays are DAY/NIGHT (e.g. long daytime for
+#          a lingering pet, short at night).
+#   Sensor room: motion/presence auto-on + hold. Switch-only room: empty hold_sensors
+#     → the switch is the trigger, the timer is the hold (graceful "fail to timer").
+#   Degrade: any hold sensor / lux unknown|unavailable → treated as off/not-bright →
+#     fall to timer / no-gate; never dark-on-a-still-occupant.
+#
+# LAYERING (do NOT bake circadian in here): this owns WHEN + on/off + the dim/off
+#   LEVELS only. Colour temp + the brightness curve while on belong to Adaptive
+#   Lighting (take_over_control on). That's why this is one arc, not 11k lines.
+#
+# Seeded by harvesting the locally-patched SmartThingsConnect arc (dim-before-off,
+# day/night, manual-override grace, retry); adds the hybrid + door triggers, the
+# trigger-vs-hold split, first-class lux/sun gate, and relative dim. Self-trigger
+# note: an auto-on's own turn-on (off→on) fires manual_on once; mode:restart re-runs
+# harmlessly (re-on of an already-on light is on→on, no further fire).
+#
+# Last Updated: 2026-06-28 | v1.0 — initial unified sensor-or-switch engine
+# Last Updated: 2026-06-29 | v1.1 — day/night dim+off timing split; trigger-only
+#   sensor class (door contacts start, don't hold); renamed trigger_sensors→hold_sensors
+# =============================================================================
+blueprint:
+  name: "Sensor-or-Switch Light (unified auto on/dim/off)"
+  description: >-
+    One engine for motion/presence rooms AND switch-only rooms, with optional
+    momentary triggers (door contacts). A hold-sensor-on, a door opening, or a manual
+    switch-on starts the same arc: on (day/night) → hold → relative dim → off, with
+    day/night dim & off timing. Pair with Adaptive Lighting for colour temperature
+    (this controls brightness only).
+  domain: automation
+  source_url: https://raw.githubusercontent.com/splitsec2/ha-blueprints/main/blueprints/automation/sensor_or_switch_light.yaml
+  input:
+    enable_condition:
+      name: Master enable
+      description: Automation runs only while this template is true (default always).
+      default: "{{ true }}"
+      selector:
+        template: {}
+    hold_sensors:
+      name: Hold sensors (motion / presence — optional)
+      description: >-
+        Motion / presence / occupancy binary_sensors. Any going on starts the arc AND
+        HOLDS the light while it stays on. Leave EMPTY for a switch-only room.
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    trigger_only_sensors:
+      name: Momentary triggers (door contacts / buttons — optional)
+      description: >-
+        Things whose turning on/opening should START the arc but NOT hold the light
+        (so a propped-open door won't keep it on). E.g. the garage man-door contact.
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+    controlled_lights:
+      name: Light(s) / switch(es) to control
+      description: >-
+        The lights or switches this engine manages. Turning one ON by hand is the
+        manual "switch = sensor stand-in" trigger.
+      selector:
+        entity:
+          domain: [light, switch]
+          multiple: true
+    day_time_start:
+      name: Daytime start
+      default: "06:00:00"
+      selector:
+        time: {}
+    day_time_end:
+      name: Daytime end
+      default: "22:00:00"
+      selector:
+        time: {}
+    day_brightness:
+      name: Day level (%)
+      default: 100
+      selector:
+        number: { min: 1, max: 100, step: 1, unit_of_measurement: "%", mode: slider }
+    night_brightness:
+      name: Night level (%)
+      default: 30
+      selector:
+        number: { min: 1, max: 100, step: 1, unit_of_measurement: "%", mode: slider }
+    dim_pct:
+      name: Dim-before-off (% of CURRENT brightness)
+      description: Relative warning dim — e.g. 50 drops each light to half of whatever it is now. (No effect on on/off lights.)
+      default: 50
+      selector:
+        number: { min: 1, max: 99, step: 1, unit_of_measurement: "%", mode: slider }
+    dim_wait_day:
+      name: Wait before dim — DAY (s)
+      default: 60
+      selector:
+        number: { min: 0, max: 7200, step: 1, unit_of_measurement: seconds, mode: box }
+    off_wait_day:
+      name: Wait before off — DAY (s, after dim)
+      default: 120
+      selector:
+        number: { min: 0, max: 7200, step: 1, unit_of_measurement: seconds, mode: box }
+    dim_wait_night:
+      name: Wait before dim — NIGHT (s)
+      default: 30
+      selector:
+        number: { min: 0, max: 7200, step: 1, unit_of_measurement: seconds, mode: box }
+    off_wait_night:
+      name: Wait before off — NIGHT (s, after dim)
+      default: 60
+      selector:
+        number: { min: 0, max: 7200, step: 1, unit_of_measurement: seconds, mode: box }
+    transition:
+      name: Transition (s)
+      default: 1
+      selector:
+        number: { min: 0, max: 60, step: 1, unit_of_measurement: seconds, mode: slider }
+    lux_sensor:
+      name: Illuminance sensor (optional)
+      description: If set, the motion/door auto-on is suppressed when lux is above the threshold.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+    lux_threshold:
+      name: Lux gate threshold
+      default: 40
+      selector:
+        number: { min: 0, max: 2000, step: 1, unit_of_measurement: lx, mode: box }
+    sun_gate:
+      name: Sun-elevation gate
+      description: If on, suppress the auto-on while the sun is above the elevation below.
+      default: false
+      selector:
+        boolean: {}
+    sun_max_elevation:
+      name: Suppress auto-on above sun elevation (°)
+      default: 0
+      selector:
+        number: { min: -20, max: 20, step: 0.5, unit_of_measurement: "°", mode: slider }
+    manual_on_overrides_gate:
+      name: Manual switch-on overrides the lux/sun gate
+      description: A hand switch-on is intent — turn on regardless of lux/sun (recommended).
+      default: true
+      selector:
+        boolean: {}
+    set_level_on_manual:
+      name: Set day/night level on a manual switch-on
+      description: On = enforce the room's day/night level even for hand-on. Off = respect the level you set by hand.
+      default: true
+      selector:
+        boolean: {}
+    manual_override_seconds:
+      name: Manual-override grace (s)
+      description: If you change a light by hand AFTER the arc started, skip the auto dim/off for this long. 0 disables.
+      default: 600
+      selector:
+        number: { min: 0, max: 3600, step: 1, unit_of_measurement: seconds, mode: box }
+    retry_count:
+      name: Retry count for on/off (0 = off)
+      description: Re-issue turn-on/off if the lights didn't reach the target state (flaky Zigbee/cloud).
+      default: 0
+      selector:
+        number: { min: 0, max: 10, step: 1, mode: slider }
+    retry_wait:
+      name: Wait between retries (s)
+      default: 3
+      selector:
+        number: { min: 1, max: 60, step: 1, unit_of_measurement: seconds, mode: slider }
+variables:
+  sensors: !input hold_sensors
+  lights: !input controlled_lights
+  v_lux_sensor: !input lux_sensor
+  v_lux_threshold: !input lux_threshold
+  v_sun_gate: !input sun_gate
+  v_sun_max: !input sun_max_elevation
+  v_manual_override_gate: !input manual_on_overrides_gate
+  v_set_level_manual: !input set_level_on_manual
+  v_grace: !input manual_override_seconds
+  v_dim_pct: !input dim_pct
+  v_transition: !input transition
+  v_day_b: !input day_brightness
+  v_night_b: !input night_brightness
+  v_day_start: !input day_time_start
+  v_day_end: !input day_time_end
+  v_dim_wait_day: !input dim_wait_day
+  v_dim_wait_night: !input dim_wait_night
+  v_off_wait_day: !input off_wait_day
+  v_off_wait_night: !input off_wait_night
+  v_retry: !input retry_count
+  v_retry_wait: !input retry_wait
+  run_start_ts: "{{ as_timestamp(now()) }}"
+  day_now: >-
+    {%- set s = today_at(v_day_start) -%}
+    {%- set e = today_at(v_day_end) -%}
+    {{ (s <= now() < e) if s <= e else (now() >= s or now() < e) }}
+  target_pct: "{{ v_day_b if day_now else v_night_b }}"
+  dim_wait: "{{ v_dim_wait_day if day_now else v_dim_wait_night }}"
+  off_wait: "{{ v_off_wait_day if day_now else v_off_wait_night }}"
+  is_manual: "{{ trigger.id == 'manual_on' }}"
+  is_external_manual: "{{ trigger.id == 'manual_on' and trigger.to_state.context.parent_id is none }}"
+  is_auto_on: "{{ trigger.id in ['sensor_on','door_on'] }}"
+  gate_blocks: >-
+    {%- set lux_bright = v_lux_sensor not in ['', none]
+        and states(v_lux_sensor) not in ['unknown','unavailable','none','']
+        and (states(v_lux_sensor) | float(0)) > (v_lux_threshold | float) -%}
+    {%- set sun_up = v_sun_gate
+        and (state_attr('sun.sun','elevation') | float(-90)) > (v_sun_max | float) -%}
+    {{ lux_bright or sun_up }}
+trigger:
+- platform: state
+  entity_id: !input hold_sensors
+  from: "off"
+  to: "on"
+  id: sensor_on
+- platform: state
+  entity_id: !input trigger_only_sensors
+  from: "off"
+  to: "on"
+  id: door_on
+- platform: state
+  entity_id: !input controlled_lights
+  from: "off"
+  to: "on"
+  id: manual_on
+condition:
+- condition: template
+  value_template: !input enable_condition
+action:
+# --- gate: suppress the auto-on triggers (motion/door); manual overrides per its toggle ---
+- choose:
+  - conditions:
+    - condition: template
+      value_template: "{{ is_auto_on and gate_blocks }}"
+    sequence:
+    - stop: "auto-on suppressed by lux/sun gate"
+  - conditions:
+    - condition: template
+      value_template: "{{ is_manual and is_external_manual and not v_manual_override_gate and gate_blocks }}"
+    sequence:
+    - stop: "manual-on gated (override disabled)"
+# --- ON: set day/night level (auto-on always; manual per toggle / self-trigger) ---
+- if:
+  - condition: template
+    value_template: "{{ is_auto_on or (is_manual and (v_set_level_manual or not is_external_manual)) }}"
+  then:
+  - service: light.turn_on
+    target:
+      entity_id: !input controlled_lights
+    data:
+      brightness_pct: "{{ target_pct }}"
+      transition: "{{ v_transition }}"
+  - if:
+    - condition: template
+      value_template: "{{ v_retry | int > 0 }}"
+    then:
+    - repeat:
+        until:
+        - condition: template
+          value_template: >-
+            {{ (lights | map('states') | select('eq','on') | list | count == lights | count)
+               or repeat.index >= (v_retry | int) }}
+        sequence:
+        - delay: { seconds: "{{ v_retry_wait }}" }
+        - service: light.turn_on
+          target:
+            entity_id: !input controlled_lights
+          data:
+            brightness_pct: "{{ target_pct }}"
+            transition: "{{ v_transition }}"
+# --- HOLD: wait until all HOLD sensors clear (immediate if none / unavailable; doors don't hold) ---
+- wait_template: "{{ sensors | map('states') | select('eq','on') | list | count == 0 }}"
+# --- DIM (relative) after the day/night dim wait, if still clear + lit + no manual intervention ---
+- delay:
+    seconds: "{{ dim_wait }}"
+- if:
+  - condition: template
+    value_template: >-
+      {%- set clear = sensors | map('states') | select('eq','on') | list | count == 0 -%}
+      {%- set lit = lights | map('states') | select('eq','on') | list | count > 0 -%}
+      {%- set ns = namespace(intervened=false) -%}
+      {%- for e in expand(lights) -%}
+        {%- if v_grace | int > 0 and e.context.parent_id is none
+            and as_timestamp(e.last_changed) > run_start_ts -%}
+          {%- set ns.intervened = true -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ clear and lit and not ns.intervened }}
+  then:
+  - repeat:
+      for_each: "{{ lights }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ state_attr(repeat.item,'brightness') is not none and (state_attr(repeat.item,'brightness') | int(0)) > 0 }}"
+        then:
+        - service: light.turn_on
+          target:
+            entity_id: "{{ repeat.item }}"
+          data:
+            brightness: "{{ (state_attr(repeat.item,'brightness') | int(0) * v_dim_pct / 100) | int }}"
+            transition: "{{ v_transition }}"
+# --- OFF after the day/night off wait, if still clear + lit + no manual intervention ---
+- delay:
+    seconds: "{{ off_wait }}"
+- if:
+  - condition: template
+    value_template: >-
+      {%- set clear = sensors | map('states') | select('eq','on') | list | count == 0 -%}
+      {%- set lit = lights | map('states') | select('eq','on') | list | count > 0 -%}
+      {%- set ns = namespace(intervened=false) -%}
+      {%- for e in expand(lights) -%}
+        {%- if v_grace | int > 0 and e.context.parent_id is none
+            and as_timestamp(e.last_changed) > run_start_ts -%}
+          {%- set ns.intervened = true -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ clear and lit and not ns.intervened }}
+  then:
+  - service: light.turn_off
+    target:
+      entity_id: !input controlled_lights
+    data:
+      transition: "{{ v_transition }}"
+  - if:
+    - condition: template
+      value_template: "{{ v_retry | int > 0 }}"
+    then:
+    - repeat:
+        until:
+        - condition: template
+          value_template: >-
+            {{ (lights | map('states') | select('eq','off') | list | count == lights | count)
+               or repeat.index >= (v_retry | int) }}
+        sequence:
+        - delay: { seconds: "{{ v_retry_wait }}" }
+        - service: light.turn_off
+          target:
+            entity_id: !input controlled_lights
+mode: restart
+max_exceeded: silent
